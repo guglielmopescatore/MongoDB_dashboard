@@ -1,9 +1,40 @@
 import streamlit as st
 import pymongo
+import pandas as pd
 import matplotlib.pyplot as plt
 from collections import Counter
 
-def plot_data(data, plot_type):
+def read_keys_from_csv(file_path):
+    """Read keys to consider from a CSV file.
+
+    Parameters:
+        file_path (str): Path to the CSV file containing keys to consider.
+
+    Returns:
+        list: A list of keys to consider.
+    """
+    df = pd.read_csv(file_path)
+    return df['keys_to_consider'].tolist()
+
+def calculate_professionals(data, keys_to_consider):
+    """Calculate the total number of professionals (credits) for each year.
+
+    Parameters:
+        data (list): The data containing records for each year.
+        keys_to_consider (list): The keys to consider for calculating professionals.
+
+    Returns:
+        Counter: A Counter object containing the total number of professionals for each year.
+    """
+    credits_counter = Counter()
+    for record in data:
+        if 'year' in record and isinstance(record['year'], int):
+            year = record['year']
+            credits_count = sum(len(record[key]) for key in keys_to_consider if key in record)
+            credits_counter[year] += credits_count
+    return credits_counter
+
+def plot_data(data, plot_type, keys_to_consider):
     """Plot the data as either a bar chart or a line chart.
 
     Parameters:
@@ -31,7 +62,7 @@ def plot_data(data, plot_type):
     years = sorted(set(year_counter.keys()).union(set(season_year_counter.keys())))
     original_frequencies = [year_counter.get(year, 0) for year in years]
     modified_frequencies = [season_year_counter.get(year, 0) for year in years]
-
+    credits_counter = calculate_professionals(data, keys_to_consider)
     # Create the plot
     fig, ax = plt.subplots(figsize=(16, 8))
 
@@ -42,7 +73,8 @@ def plot_data(data, plot_type):
 
         # Create the bar charts
         ax.bar(index, original_frequencies, width=bar_width, label='Original Count', alpha=0.7)
-        ax.bar([p + bar_width for p in index], modified_frequencies, width=bar_width, label='Modified Count (Seasons)', alpha=0.7)
+        ax.bar([p + bar_width for p in index], modified_frequencies, width=bar_width, label='Modified Count (Seasons)',
+               alpha=0.7)
 
         # Adjust the x-axis to fit the bar positions
         ax.set_xticks([p + bar_width / 2 for p in index])
@@ -59,6 +91,23 @@ def plot_data(data, plot_type):
 
     st.pyplot(fig)
 
+    # Plotting the total number of professionals
+    fig, ax = plt.subplots(figsize=(16, 8))
+    # plt.figure(figsize=(16, 8))
+    years = sorted(credits_counter.keys())
+    credits = [credits_counter[year] for year in years]
+    if plot_type == 'Bar Chart':
+        plt.bar(years, credits, label='Total Professionals')
+    else:
+        plt.plot(years, credits, label='Total Professionals')
+    plt.xlabel('Year')
+    plt.ylabel('Total Professionals')
+    plt.title('Total Professionals per Year')
+    plt.legend()
+    plt.grid(True)
+    
+    st.pyplot(fig)
+
 
 def load_data_from_mongodb(connection_string, db_name, collection_name):
     """Load data from a MongoDB collection.
@@ -70,7 +119,7 @@ def load_data_from_mongodb(connection_string, db_name, collection_name):
 
     Returns:
         list: The data loaded from the MongoDB collection.
-        
+
     """
     client = pymongo.MongoClient(connection_string)
     db = client[db_name]
@@ -90,7 +139,7 @@ st.title('MongoDB Data Analysis Dashboard')
 connection_string = st.text_input('MongoDB Connection String:')
 db_name = st.text_input('Database Name:')
 collection_name = st.text_input('Collection Name:')
-
+keys_to_consider = read_keys_from_csv("./keys_to_consider.csv")
 # Load data when user presses the button
 if st.button('Load Data'):
     try:
@@ -100,7 +149,9 @@ if st.button('Load Data'):
         st.write('An error occurred:', e)
         st.session_state.loaded_data = None
 
+
 # Plot the data if it has been loaded
 if st.session_state.loaded_data:
     plot_type = st.selectbox('Select Plot Type', ['Bar Chart', 'Line Chart'])
-    plot_data(st.session_state.loaded_data, plot_type)
+    plot_data(st.session_state.loaded_data, plot_type, keys_to_consider)
+
