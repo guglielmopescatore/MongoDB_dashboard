@@ -61,3 +61,18 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 ## License
 
 [MIT License](https://choosealicense.com/licenses/mit/)
+
+## New Features in Latest Version
+
+### Crew Members Analysis
+- Added the ability to display the number of crew members per year based on the data in the MongoDB collection.
+- The application now reads from a `keys_to_consider.csv` file to determine which keys to consider for counting crew members.
+
+
+### External Files Required
+
+#### keys_to_consider.csv
+- This external file is required for the new crew members analysis feature.
+- The file should contain the keys to consider for counting crew members.
+- Place this file in the root directory of the project for the script to access it.
+
