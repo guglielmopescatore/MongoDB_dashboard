@@ -34,14 +34,7 @@ def calculate_professionals(data, keys_to_consider):
             credits_counter[year] += credits_count
     return credits_counter
 
-def plot_data(data, plot_type, keys_to_consider):
-    """Plot the data as either a bar chart or a line chart.
-
-    Parameters:
-        data (list): The data to plot.
-        plot_type (str): The type of plot to generate ("Bar Chart" or "Line Chart").
-
-    """
+def calculate_seasons(data):
     year_counter = Counter()
     season_year_counter = Counter()
 
@@ -62,8 +55,17 @@ def plot_data(data, plot_type, keys_to_consider):
     years = sorted(set(year_counter.keys()).union(set(season_year_counter.keys())))
     original_frequencies = [year_counter.get(year, 0) for year in years]
     modified_frequencies = [season_year_counter.get(year, 0) for year in years]
+    
+    return years, original_frequencies, modified_frequencies
+
+def plot_data(data, plot_type, keys_to_consider):
+    # Call the `calculate_seasons` function to get the years and frequencies
+    years, original_frequencies, modified_frequencies = calculate_seasons(data)
+    
+    # Call the existing `calculate_professionals` function
     credits_counter = calculate_professionals(data, keys_to_consider)
-    # Create the plot
+
+    # Create the first plot
     fig, ax = plt.subplots(figsize=(16, 8))
 
     if plot_type == 'Bar Chart':
@@ -88,10 +90,9 @@ def plot_data(data, plot_type, keys_to_consider):
     ax.legend()
     ax.set_title('Series in Production per Year')
     ax.grid(True)
-
     st.pyplot(fig)
 
-    # Plotting the total number of professionals
+    # Create the second plot
     fig, ax = plt.subplots(figsize=(16, 8))
     # plt.figure(figsize=(16, 8))
     years = sorted(credits_counter.keys())
@@ -105,9 +106,7 @@ def plot_data(data, plot_type, keys_to_consider):
     plt.title('Total Professionals per Year')
     plt.legend()
     plt.grid(True)
-    
     st.pyplot(fig)
-
 
 def load_data_from_mongodb(connection_string, db_name, collection_name):
     """Load data from a MongoDB collection.
@@ -127,31 +126,30 @@ def load_data_from_mongodb(connection_string, db_name, collection_name):
     data = list(collection.find({}))
     return data
 
-
-# Initialize session state
-if 'loaded_data' not in st.session_state:
-    st.session_state.loaded_data = None
-
-# Create Streamlit interface
-st.title('MongoDB Data Analysis Dashboard')
-
-# Input fields for MongoDB connection
-connection_string = st.text_input('MongoDB Connection String:')
-db_name = st.text_input('Database Name:')
-collection_name = st.text_input('Collection Name:')
-keys_to_consider = read_keys_from_csv("./keys_to_consider.csv")
-# Load data when user presses the button
-if st.button('Load Data'):
-    try:
-        st.session_state.loaded_data = load_data_from_mongodb(connection_string, db_name, collection_name)
-        st.write('Data successfully loaded!')
-    except Exception as e:
-        st.write('An error occurred:', e)
+def main():
+    # Initialize session state
+    if 'loaded_data' not in st.session_state:
         st.session_state.loaded_data = None
+    # Create Streamlit interface
+    st.title('MongoDB Data Analysis Dashboard')
+    # Input fields for MongoDB connection
+    connection_string = st.text_input('MongoDB Connection String:')
+    db_name = st.text_input('Database Name:')
+    collection_name = st.text_input('Collection Name:')
+    keys_to_consider = read_keys_from_csv("./keys_to_consider.csv")
+    # Load data when user presses the button
+    if st.button('Load Data'):
+        try:
+            st.session_state.loaded_data = load_data_from_mongodb(connection_string, db_name, collection_name)
+            st.write('Data successfully loaded!')
+        except Exception as e:
+            st.write('An error occurred:', e)
+            st.session_state.loaded_data = None
+    # Plot the data if it has been loaded
+    if st.session_state.loaded_data:
+        plot_type = st.selectbox('Select Plot Type', ['Bar Chart', 'Line Chart'])
+        plot_data(st.session_state.loaded_data, plot_type, keys_to_consider)
+    
 
-
-# Plot the data if it has been loaded
-if st.session_state.loaded_data:
-    plot_type = st.selectbox('Select Plot Type', ['Bar Chart', 'Line Chart'])
-    plot_data(st.session_state.loaded_data, plot_type, keys_to_consider)
-
+if __name__ == '__main__':
+    main()
