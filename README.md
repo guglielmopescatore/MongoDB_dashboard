@@ -76,3 +76,13 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 - The file should contain the keys to consider for counting crew members.
 - Place this file in the root directory of the project for the script to access it.
 
+
+## Features
+
+### Interactive Graphs with Plotly
+
+The dashboard utilizes Plotly for data visualization, offering an interactive and user-friendly experience. Users can zoom in, pan, and hover over the graphs to receive insightful tooltips.
+
+### Data Export in CSV Format
+
+The dashboard provides an option for data export of the displayed graphs. By clicking the 'Export Data in CSV' button, users can download a .csv file containing the dataset relevant to the graphs for further analysis or reporting.
