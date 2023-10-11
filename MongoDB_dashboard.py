@@ -1,7 +1,9 @@
 import streamlit as st
 import pymongo
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 from collections import Counter
 
 def read_keys_from_csv(file_path):
@@ -32,7 +34,9 @@ def calculate_professionals(data, keys_to_consider):
             year = record['year']
             credits_count = sum(len(record[key]) for key in keys_to_consider if key in record)
             credits_counter[year] += credits_count
-    return credits_counter
+        years = sorted(credits_counter.keys())
+        credits = [credits_counter[year] for year in years]
+    return credits
 
 def calculate_seasons(data):
     year_counter = Counter()
@@ -58,55 +62,113 @@ def calculate_seasons(data):
     
     return years, original_frequencies, modified_frequencies
 
+def export_data_to_csv(data, keys_to_consider):
+    """
+    Export the calculated data to a CSV file.
+    
+    The function fetches the data by calling other functions and generates a CSV file for download.
+    
+    Returns:
+        None. The function generates a CSV file for download.
+    """
+    # Calculate the data using other functions in the script
+    years, total_series, new_series = calculate_seasons(data)
+    professionals = calculate_professionals(data, keys_to_consider)
+    # Trova la lunghezza massima tra le liste
+    max_length = max(len(years), len(total_series), len(new_series), len(professionals))
+
+    # Riempi le liste con NaN fino a raggiungere la lunghezza massima
+    years = years + [np.nan] * (max_length - len(years))
+    total_series = total_series + [np.nan] * (max_length - len(total_series))
+    new_series = new_series + [np.nan] * (max_length - len(new_series))
+    professionals = professionals + [np.nan] * (max_length - len(professionals))
+    
+    # Create a DataFrame from the calculated data
+    df = pd.DataFrame({
+        'Year': years,
+        'Total Series in Production': total_series,
+        'New Series': new_series,
+        'Professionals': professionals
+    })
+    
+    # Convert the DataFrame to a CSV string
+    csv = df.to_csv(index=False)
+    
+    # Return the CSV string for further processing
+    return csv
+
 def plot_data(data, plot_type, keys_to_consider):
+    """
+    Plot the given data using Plotly.
+    
+    Parameters:
+    - data (DataFrame or dict): The data to be plotted.
+    - plot_type (str): The type of plot to generate. Options are "Bar Chart" and "Line Chart".
+    - keys_to_consider (list): The keys or columns in the data that should be considered for plotting.
+    
+    Returns:
+    None. The function directly plots the graphs using st.plotly_chart().
+    
+    This function creates two plots:
+    1. A comparison between 'Original Frequencies' and 'Modified Frequencies' over years.
+    2. A distribution of 'Credits' over years.
+    """
     # Call the `calculate_seasons` function to get the years and frequencies
     years, original_frequencies, modified_frequencies = calculate_seasons(data)
     
     # Call the existing `calculate_professionals` function
-    credits_counter = calculate_professionals(data, keys_to_consider)
+    credits = calculate_professionals(data, keys_to_consider)
 
-    # Create the first plot
-    fig, ax = plt.subplots(figsize=(16, 8))
+    
+    # Create the first plot using Plotly
+    fig1 = go.Figure()
 
     if plot_type == 'Bar Chart':
-        # Adjust the positions and width for the bars
-        bar_width = 0.35
-        index = range(len(years))
-
-        # Create the bar charts
-        ax.bar(index, original_frequencies, width=bar_width, label='Original Count', alpha=0.7)
-        ax.bar([p + bar_width for p in index], modified_frequencies, width=bar_width, label='Modified Count (Seasons)',
-               alpha=0.7)
-
-        # Adjust the x-axis to fit the bar positions
-        ax.set_xticks([p + bar_width / 2 for p in index])
-        ax.set_xticklabels(years)
+        # Adding bars for original frequencies
+        fig1.add_trace(go.Bar(x=years, y=original_frequencies, name='New Series'))
+        # Adding bars for modified frequencies
+        fig1.add_trace(go.Bar(x=years, y=modified_frequencies, name='Total Series in Production'))
     else:
-        ax.plot(years, original_frequencies, label='Original Count', marker='o')
-        ax.plot(years, modified_frequencies, label='Modified Count (Seasons)', marker='x')
+        # Adding line for original frequencies
+        fig1.add_trace(go.Scatter(x=years, y=original_frequencies, mode='lines+markers', name='New Series'))
+        # Adding line for modified frequencies
+        fig1.add_trace(go.Scatter(x=years, y=modified_frequencies, mode='lines+markers', name='Total Series in Production'))
 
-    ax.set_xlabel('Year')
-    ax.set_ylabel('Series in Production')
-    ax.legend()
-    ax.set_title('Series in Production per Year')
-    ax.grid(True)
-    st.pyplot(fig)
-
-    # Create the second plot
-    fig, ax = plt.subplots(figsize=(16, 8))
-    # plt.figure(figsize=(16, 8))
-    years = sorted(credits_counter.keys())
-    credits = [credits_counter[year] for year in years]
+    # Additional layout settings
+    
+    # Update colors and layout for the first figure
+    fig1.update_traces(marker=dict(color='rgba(135, 206, 250, 0.8)'), selector=dict(name='New Series'))
+    fig1.update_traces(marker=dict(color='rgba(255, 87, 34, 0.8)'), selector=dict(name='Total Series in Production'))
+    fig1.update_layout(
+        title='Series in Production per Year',
+        xaxis_title='Years',
+        yaxis_title='Series',
+    )
+    
+    # Show the first figure
+    st.plotly_chart(fig1)
+# Create the second plot
+    
+    # Create the second plot using Plotly
+    fig2 = go.Figure()
     if plot_type == 'Bar Chart':
-        plt.bar(years, credits, label='Total Professionals')
+        # Adding bars for credits
+        fig2.add_trace(go.Bar(x=years, y=credits, name='Professionals'))
     else:
-        plt.plot(years, credits, label='Total Professionals')
-    plt.xlabel('Year')
-    plt.ylabel('Total Professionals')
-    plt.title('Total Professionals per Year')
-    plt.legend()
-    plt.grid(True)
-    st.pyplot(fig)
+        # Adding line for credits
+        fig2.add_trace(go.Scatter(x=years, y=credits , mode='lines+markers', name='Professionals'))
+    # Update colors and layout for the second figure
+    fig2.update_traces(marker=dict(color='rgba(50, 171, 96, 0.7)'), selector=dict(name='Professionals'))
+    # Additional layout settings
+    fig2.update_layout(
+        title='Total Professionals per Year',
+        xaxis_title='Years',
+        yaxis_title='Professionals',
+    )
+    
+    # Show the second figure
+    st.plotly_chart(fig2)
+
 
 def load_data_from_mongodb(connection_string, db_name, collection_name):
     """Load data from a MongoDB collection.
@@ -149,7 +211,17 @@ def main():
     if st.session_state.loaded_data:
         plot_type = st.selectbox('Select Plot Type', ['Bar Chart', 'Line Chart'])
         plot_data(st.session_state.loaded_data, plot_type, keys_to_consider)
-    
+    # Crea un pulsante Streamlit per l'esportazione dei dati
+    if st.button('Esporta Dati in CSV'):
+        csv = export_data_to_csv(st.session_state.loaded_data, keys_to_consider)
+        # Crea un pulsante di download Streamlit per la stringa CSV
+        st.download_button(
+            label='Scarica Dati in CSV',
+            data=csv,
+            file_name='esportazione_dati.csv',
+            mime='text/csv'
+        )
+
 
 if __name__ == '__main__':
     main()
