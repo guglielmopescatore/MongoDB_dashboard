@@ -1,11 +1,47 @@
 import streamlit as st
 import pymongo
+from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError, OperationFailure, InvalidURI
+from pymongo import MongoClient
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from collections import Counter
 
+@st.cache_resource
+def get_collection(connection_string, db_name, collection_name):
+    try:
+        client = MongoClient(connection_string, serverSelectionTimeoutMS=5000)
+        client.server_info()  # Force a call to the server to verify that the connection is successfully established
+
+        # Check if the database exists
+        if db_name not in client.list_database_names():
+            st.warning(f"The database '{db_name}' does not exist.")
+            return None
+
+        db = client[db_name]
+
+        # Check if the collection exists
+        if collection_name not in db.list_collection_names():
+            st.warning(f"The collection '{collection_name}' does not exist.")
+            return None
+
+        collection = db[collection_name]
+        return collection
+
+    except InvalidURI:
+        st.error("Invalid MongoDB URI. Please check the format.")
+    except ConnectionFailure:
+        st.error("Failed to connect to the server.")
+    except ServerSelectionTimeoutError:
+        st.error("Server selection timed out.")
+    except OperationFailure:
+        st.error("Operation failed.")
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {e}")
+
+    return None
+        
 def read_keys_from_csv(file_path):
     """Read keys to consider from a CSV file.
 
@@ -18,51 +54,7 @@ def read_keys_from_csv(file_path):
     df = pd.read_csv(file_path)
     return df['keys_to_consider'].tolist()
 
-def calculate_professionals(data, keys_to_consider):
-    """Calculate the total number of professionals (credits) for each year.
-
-    Parameters:
-        data (list): The data containing records for each year.
-        keys_to_consider (list): The keys to consider for calculating professionals.
-
-    Returns:
-        Counter: A Counter object containing the total number of professionals for each year.
-    """
-    credits_counter = Counter()
-    for record in data:
-        if 'year' in record and isinstance(record['year'], int):
-            year = record['year']
-            credits_count = sum(len(record[key]) for key in keys_to_consider if key in record)
-            credits_counter[year] += credits_count
-        years = sorted(credits_counter.keys())
-        credits = [credits_counter[year] for year in years]
-    return credits
-
-def calculate_seasons(data):
-    year_counter = Counter()
-    season_year_counter = Counter()
-
-    # Count the occurrences of each year and each season
-    for record in data:
-        if 'year' in record and isinstance(record['year'], int):
-            year = record['year']
-            year_counter[year] += 1
-
-            if 'number of seasons' in record and isinstance(record['number of seasons'], int):
-                num_seasons = record['number of seasons']
-            else:
-                num_seasons = 1
-
-            for y in range(year, year + num_seasons):
-                season_year_counter[y] += 1
-
-    years = sorted(set(year_counter.keys()).union(set(season_year_counter.keys())))
-    original_frequencies = [year_counter.get(year, 0) for year in years]
-    modified_frequencies = [season_year_counter.get(year, 0) for year in years]
-    
-    return years, original_frequencies, modified_frequencies
-
-def export_data_to_csv(data, keys_to_consider):
+def export_data_to_csv(collection, keys_to_consider):
     """
     Export the calculated data to a CSV file.
     
@@ -72,8 +64,8 @@ def export_data_to_csv(data, keys_to_consider):
         None. The function generates a CSV file for download.
     """
     # Calculate the data using other functions in the script
-    years, total_series, new_series = calculate_seasons(data)
-    professionals = calculate_professionals(data, keys_to_consider)
+    years, total_series, new_series = calculate_seasons(collection)
+    professionals = calculate_professionals(collection, keys_to_consider)
     # Trova la lunghezza massima tra le liste
     max_length = max(len(years), len(total_series), len(new_series), len(professionals))
 
@@ -97,7 +89,7 @@ def export_data_to_csv(data, keys_to_consider):
     # Return the CSV string for further processing
     return csv
 
-def plot_data(data, plot_type, keys_to_consider):
+def plot_data(collection, plot_type, keys_to_consider):
     """
     Plot the given data using Plotly.
     
@@ -114,10 +106,10 @@ def plot_data(data, plot_type, keys_to_consider):
     2. A distribution of 'Credits' over years.
     """
     # Call the `calculate_seasons` function to get the years and frequencies
-    years, original_frequencies, modified_frequencies = calculate_seasons(data)
+    years, original_frequencies, modified_frequencies = calculate_seasons(collection)
     
     # Call the existing `calculate_professionals` function
-    credits = calculate_professionals(data, keys_to_consider)
+    credits = calculate_professionals(collection, keys_to_consider)
 
     
     # Create the first plot using Plotly
@@ -151,6 +143,8 @@ def plot_data(data, plot_type, keys_to_consider):
     
     # Create the second plot using Plotly
     fig2 = go.Figure()
+    #years = sorted(credits_counter.keys())
+    #credits = [credits_counter[year] for year in years]
     if plot_type == 'Bar Chart':
         # Adding bars for credits
         fig2.add_trace(go.Bar(x=years, y=credits, name='Professionals'))
@@ -170,53 +164,139 @@ def plot_data(data, plot_type, keys_to_consider):
     st.plotly_chart(fig2)
 
 
-def load_data_from_mongodb(connection_string, db_name, collection_name):
-    """Load data from a MongoDB collection.
+def calculate_professionals(collection, keys_to_consider):
+    """Calculate the total number of professionals (credits) for each year using MongoDB queries.
 
     Parameters:
-        connection_string (str): The MongoDB connection string.
-        db_name (str): The name of the database.
-        collection_name (str): The name of the collection.
+        collection (str): Collection name.
+        keys_to_consider (list): The keys to consider for calculating professionals.
 
     Returns:
-        list: The data loaded from the MongoDB collection.
-
+        Counter: A Counter object containing the total number of professionals for each year.
     """
-    client = pymongo.MongoClient(connection_string)
-    db = client[db_name]
-    collection = db[collection_name]
-    data = list(collection.find({}))
-    return data
+    
+    # Select collection
+    collection = collection
+
+    # Initialize counter
+    credits_counter = Counter()
+
+    # Create the aggregation pipeline
+    sum_fields = {}
+    for key in keys_to_consider:
+        sum_fields[key] = {
+            "$cond": {
+                "if": {"$isArray": f"${key}"},
+                "then": {"$size": f"${key}"},
+                "else": 0
+            }
+    }
+    pipeline = [
+        {"$group": {
+            "_id": "$year",
+            "total_credits": {"$sum": {"$add": list(sum_fields.values())}}
+        }},
+        {"$sort": {"_id": 1}}  # Sort by year
+    ]
+
+    # Run the aggregation
+    aggregation_result = collection.aggregate(pipeline)
+
+    # Populate the counter with the results
+    for record in aggregation_result:
+        if record["_id"] is not None:
+            credits_counter[record["_id"]] = record["total_credits"]
+    years = sorted(credits_counter.keys())
+    credits = [credits_counter[year] for year in years]
+    return credits
+
+
+
+def calculate_seasons(collection):
+    """
+    Calculate the number of products and seasons per year directly using MongoDB queries.
+    This version uses Counters to store frequencies and also returns lists suitable for plotting.
+
+    Parameters:
+        collection (str): Collection name.
+
+    Returns:
+        years (list): List of years.
+        original_frequencies_list (list): List of the number of products per year.
+        modified_frequencies_list (list): List of the number of seasons per year.
+    """
+
+    # Select collection
+
+    collection = collection
+    
+    # Counters to store the results
+    original_frequencies = Counter()
+    modified_frequencies = Counter()
+    
+    # Use aggregation framework to count the number of products per year
+    pipeline_products = [{"$group": {"_id": "$year", "count": {"$sum": 1}}}]
+    aggregated_result_products = list(collection.aggregate(pipeline_products))
+    
+    for item in aggregated_result_products:
+        original_frequencies[item['_id']] = item['count']
+    
+    # Custom logic for calculating seasons per year
+    pipeline_seasons = [
+        {"$project": {
+            "year": 1,
+            "number of seasons": {"$ifNull": ["$number of seasons", 1]},  # Handling null values
+            "year_range": {
+                "$range": [
+                    "$year", 
+                    {"$add": ["$year", "$number of seasons"]},
+                ]
+            }
+        }},
+        {"$unwind": {"path": "$year_range"}},
+        {"$group": {"_id": "$year_range", "count": {"$sum": 1}}}
+    ]
+    aggregated_result_seasons = list(collection.aggregate(pipeline_seasons))
+    
+    for item in aggregated_result_seasons:
+        modified_frequencies[item['_id']] = item['count']
+    
+    # Sorting the lists based on years for better readability and further processing
+    years = sorted(set(original_frequencies.keys()).union(set(modified_frequencies.keys())))
+    
+    # Convert Counters to lists for plotting
+    original_frequencies_list = [original_frequencies.get(year, 0) for year in years]
+    modified_frequencies_list = [modified_frequencies.get(year, 0) for year in years]
+    
+    return years, original_frequencies_list, modified_frequencies_list
 
 def main():
     # Initialize session state
-    if 'loaded_data' not in st.session_state:
-        st.session_state.loaded_data = None
-    # Create Streamlit interface
+    if 'collection' not in st.session_state:
+        st.session_state.collection = None
     st.title('MongoDB Data Analysis Dashboard')
     # Input fields for MongoDB connection
     connection_string = st.text_input('MongoDB Connection String:')
     db_name = st.text_input('Database Name:')
     collection_name = st.text_input('Collection Name:')
     keys_to_consider = read_keys_from_csv("./keys_to_consider.csv")
-    # Load data when user presses the button
-    if st.button('Load Data'):
-        try:
-            st.session_state.loaded_data = load_data_from_mongodb(connection_string, db_name, collection_name)
-            st.write('Data successfully loaded!')
-        except Exception as e:
-            st.write('An error occurred:', e)
-            st.session_state.loaded_data = None
-    # Plot the data if it has been loaded
-    if st.session_state.loaded_data:
+   
+    # Ploat data when user presses the button
+    if st.button('Plot Data'):
+        st.session_state.collection = get_collection(connection_string, db_name, collection_name)
+        if st.session_state.collection is not None:
+            st.success("Connessione stabilita.")
+        else:
+            st.warning("Connessione non stabilita. Verifica gli errori.")
+    if st.session_state.collection:
         plot_type = st.selectbox('Select Plot Type', ['Bar Chart', 'Line Chart'])
-        plot_data(st.session_state.loaded_data, plot_type, keys_to_consider)
-    # Crea un pulsante Streamlit per l'esportazione dei dati
-    if st.button('Esporta Dati in CSV'):
-        csv = export_data_to_csv(st.session_state.loaded_data, keys_to_consider)
-        # Crea un pulsante di download Streamlit per la stringa CSV
+        plot_data(st.session_state.collection, plot_type, keys_to_consider)
+        # Creates a Streamlit button for exporting data
+    if st.button('Export Data to CSV'):
+        csv = export_data_to_csv(collection, keys_to_consider)
+        # Create a Streamlit download button for the CSV file
         st.download_button(
-            label='Scarica Dati in CSV',
+            label='Download Data to CSV',
             data=csv,
             file_name='esportazione_dati.csv',
             mime='text/csv'
