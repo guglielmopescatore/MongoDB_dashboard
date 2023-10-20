@@ -288,7 +288,7 @@ def main():
             st.success("Connessione stabilita.")
         else:
             st.warning("Connessione non stabilita. Verifica gli errori.")
-    if st.session_state.collection:
+    if st.session_state.collection is not None:
         plot_type = st.selectbox('Select Plot Type', ['Bar Chart', 'Line Chart'])
         plot_data(st.session_state.collection, plot_type, keys_to_consider)
         # Creates a Streamlit button for exporting data
