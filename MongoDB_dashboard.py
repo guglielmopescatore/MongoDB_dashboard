@@ -235,7 +235,11 @@ def calculate_seasons(collection):
     modified_frequencies = Counter()
     
     # Use aggregation framework to count the number of products per year
-    pipeline_products = [{"$group": {"_id": "$year", "count": {"$sum": 1}}}]
+    pipeline_products = [
+        {"$match": {"year": {"$ne": None}}},
+        {"$group": {"_id": "$year", "count": {"$sum": 1}}}
+    ]
+
     aggregated_result_products = list(collection.aggregate(pipeline_products))
     
     for item in aggregated_result_products:
@@ -243,19 +247,36 @@ def calculate_seasons(collection):
     
     # Custom logic for calculating seasons per year
     pipeline_seasons = [
+        {"$match": {"year": {"$ne": None}}},  # Exclude nulls for 'year'
         {"$project": {
             "year": 1,
-            "number of seasons": {"$ifNull": ["$number of seasons", 1]},  # Handling null values
+            "number of seasons": {
+                "$cond": [
+                    {"$or": [
+                        {"$eq": [{"$type": "$number of seasons"}, "null"]},
+                        {"$ne": [{"$type": "$number of seasons"}, "int"]}
+                    ]},
+                    1,
+                    "$number of seasons"
+                ]
+            }
+        }},
+        {"$addFields": {  # Logging intermediate result
+            "end_range": {"$add": ["$year", "$number of seasons"]}
+        }},
+        {"$project": {
             "year_range": {
-                "$range": [
-                    "$year", 
-                    {"$add": ["$year", "$number of seasons"]},
+                "$cond": [
+                    {"$eq": ["$end_range", None]},
+                    {"end_range": {"$add": ["$year", 1]}},
+                    {"$range": ["$year", "$end_range"]}
                 ]
             }
         }},
         {"$unwind": {"path": "$year_range"}},
         {"$group": {"_id": "$year_range", "count": {"$sum": 1}}}
     ]
+
     aggregated_result_seasons = list(collection.aggregate(pipeline_seasons))
     
     for item in aggregated_result_seasons:
