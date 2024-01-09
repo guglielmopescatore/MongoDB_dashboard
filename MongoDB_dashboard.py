@@ -307,7 +307,7 @@ def main():
         plot_data(st.session_state.collection, plot_type, keys_to_consider)
         # Creates a Streamlit button for exporting data
     if st.button('Export Data to CSV'):
-        csv = export_data_to_csv(collection, keys_to_consider)
+        csv = export_data_to_csv(st.session_state.collection, keys_to_consider)
         # Create a Streamlit download button for the CSV file
         st.download_button(
             label='Download Data to CSV',
