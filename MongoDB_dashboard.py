@@ -245,33 +245,29 @@ def calculate_seasons(collection):
     for item in aggregated_result_products:
         original_frequencies[item['_id']] = item['count']
     
+def calculate_seasons(collection):
+    # ... [rest of the function remains unchanged] ...
+
     # Custom logic for calculating seasons per year
     pipeline_seasons = [
-        {"$match": {"year": {"$ne": None}}},  # Exclude nulls for 'year'
+        {"$match": {"series years": {"$ne": None}}},
         {"$project": {
             "year": 1,
-            "number of seasons": {
-                "$cond": [
-                    {"$or": [
-                        {"$eq": [{"$type": "$number of seasons"}, "null"]},
-                        {"$ne": [{"$type": "$number of seasons"}, "int"]}
-                    ]},
-                    1,
-                    "$number of seasons"
-                ]
+            "start_year": {
+                "$toInt": {"$arrayElemAt": [{"$split": ["$series years", "-"]}, 0]}
+            },
+            "end_year": {
+                "$toInt": {
+                    "$cond": [
+                        {"$eq": [{"$arrayElemAt": [{"$split": ["$series years", "-"]}, 1]}, ""]},
+                        {"$arrayElemAt": [{"$split": ["$series years", "-"]}, 0]},
+                        {"$arrayElemAt": [{"$split": ["$series years", "-"]}, 1]}
+                    ]
+                }
             }
-        }},
-        {"$addFields": {  # Logging intermediate result
-            "end_range": {"$add": ["$year", "$number of seasons"]}
         }},
         {"$project": {
-            "year_range": {
-                "$cond": [
-                    {"$eq": ["$end_range", None]},
-                    {"end_range": {"$add": ["$year", 1]}},
-                    {"$range": ["$year", "$end_range"]}
-                ]
-            }
+            "year_range": {"$range": ["$start_year", {"$add": ["$end_year", 1]}]}
         }},
         {"$unwind": {"path": "$year_range"}},
         {"$group": {"_id": "$year_range", "count": {"$sum": 1}}}
