@@ -245,9 +245,6 @@ def calculate_seasons(collection):
     for item in aggregated_result_products:
         original_frequencies[item['_id']] = item['count']
     
-def calculate_seasons(collection):
-    # ... [rest of the function remains unchanged] ...
-
     # Custom logic for calculating seasons per year
     pipeline_seasons = [
         {"$match": {"series years": {"$ne": None}}},
